@@ -1,0 +1,99 @@
+---
+title: "R Notebook"
+output: github_document
+---
+
+# Introduction to DeSeq2
+
+How does deSeq work?
+
+We want to compare between two biologically distinct conditions and try to figure out how the gene expressions differ between these two conditions.
+
+For instance, we have two untreated and treated drug conditions.
+
+We have biological replicates and multiple technical replicates from these samples.
+
+We get a count matrix from these experiments.
+
+Counts are always in
+
+-   Dynamic range
+
+-   doesn't follow Normal distribution
+
+-   in whole numbers
+
+Then what distributions best represent these data?
+
+1.  Poisson distribution?
+
+Why poisson distribution
+
+-   you fit this distribution when the number of cases is large but the probability of event happening is low.
+
+-   in RNA-seq selecting mRNA from a large number of RNA molecules sort of represent this situation.
+
+But then why does poisson distribution not work?
+
+The mean and the variance of the poisson distribution has to be the same!
+
+However, genes tend to have higher variance than mean.
+
+For low mean counts, high variance but high mean counts, low variance.
+
+**AS A RESULT DeSeq2 uses a NEGATIVE BINOMIAL distribution**
+
+you can account for the extra variability with this distribution.
+
+## What does DeSeq2 do?
+
+For each gene...
+
+-   Estimate size factor and dispersion
+-   Fit linear model
+-   Hypothesis test (p-value)
+
+### Estimate Size Factor
+
+There are two bias we have to take account to: Library Size and Library Composition
+
+-   Library size : sequencing depth might be a problem
+
+-   Library composition
+
+only gene D is differentially expressed
+
+| Gene | untreated | treated |
+|------|-----------|---------|
+| A    | 2         | 10      |
+| B    | 4         | 12      |
+| C    | 6         | 20      |
+| D    | 30        | 0       |
+
+1.  Calculate Geometric mean (geometric mean is more robust to outliars)
+
+| Gene | untreated | treated | pseudo ref      | untreat / ref | treat / ref |
+|------|-----------|---------|-----------------|---------------|-------------|
+| A    | 2         | 10      | sqrt(20) = 4.47 | 0.45          | 2.24        |
+| B    | 4         | 12      | 6.93            | 0.58          | 1.73        |
+| C    | 6         | 20      | 10.95           | 0.55          | 1.83        |
+| D    | 30        | 0       | 0               | 0             | 0           |
+
+You get the median of untreat/ref and treat/ref
+
+median of untreat / ref = 0.5, median of treat/ref = 1.78 = normalization factor
+
+divide by size factor
+
+| Gene | untreated_norm | treated+norm |
+|------|----------------|--------------|
+| A    | 4.016          | 5.65         |
+| B    | 8.032          | 6.74         |
+| C    | 12.05          | 11.24        |
+| D    | 60.24          | 0            |
+
+Now these are normalized for library composition
+
+## Estimate the dispersion of each gene
+
+measure the spread and account for variability between replicates

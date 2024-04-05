@@ -1,6 +1,6 @@
 ---
 title: "R Notebook"
-output: html_notebook
+output: github_document
 ---
 
 # RPKM FPKM and TPM
@@ -96,7 +96,6 @@ Now we understand why we have to normalize
 
 ### TPM
 
-1. you do the RPKM but in reverse order
-
+1.  you do the RPKM but in reverse order
 
 TPM is better to compare between technical replicates.

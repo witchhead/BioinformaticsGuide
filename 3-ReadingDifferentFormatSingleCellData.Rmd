@@ -1,6 +1,6 @@
 ---
 title: "R Notebook"
-output: html_notebook
+output: github_document
 ---
 
 # Reading Different Formats of Single Cell Data
@@ -60,4 +60,3 @@ Still use the GSE183947 dataset : [link](https://www.ncbi.nlm.nih.gov/geo/query/
 click on SRA Run selector on the bottom of the link.
 
 You can save all the srr items by pressing the accession list below "Download"
-
