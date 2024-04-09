@@ -1,0 +1,173 @@
+---
+title: "Integrate single-cell RNA seq datasets with Seurat"
+output: github_document
+---
+
+# When to integrate data
+
+- Integration can be used from multiple datasets
+
+- transfer cell type classifications
+
+- multimodal datasets
+
+- integrate topological spatial datasets
+
+## Types of Inegrations
+
+1. Horizontal Integration
+
+- Same modality from **independent cells**
+
+- Assays are anchored by **common gene sets**
+
+- ex) scRNA-seq from same tissue from different patients / sequencing technologies
+
+2. Vertical Integration
+
+- **multiple modalities** profiled simulatneously from same cell
+
+- Assays are anchored by **Cells**
+
+- ex) scRNA-seq and scATAC-seq performed in same cells
+
+3. Diagonal Integration
+
+- multiple modalities from different cells
+
+## Batch correction methods
+
+MNN, Seurat, LIGER, Harmony, BBKNN, scVI, Conos, Scmap, Scanorama, scAlign... 
+
+the list goes on
+
+# Load Libraries
+
+```{r, message = FALSE, warning = FALSE, load-libraries}
+library(tidyverse)
+library(ggplot2)
+library(Seurat)
+library(gridExtra)
+```
+
+# Get Data Location
+
+```{r}
+dirs <- list.dirs(path = ".gitignore/", recursive = F, full.names = F)
+dirs
+for(x in dirs){
+  name <- gsub("_filtered_feature_bc_matrix", "", x)
+  cts <- ReadMtx(mtx = paste0(".gitignore/", x, "/matrix.mtx.gz"),
+                 features = paste0(".gitignore/", x, "/features.tsv.gz"),
+                 cells = paste0(".gitignore/", x, "/barcodes.tsv.gz"))
+  assign(name, CreateSeuratObject(counts = cts))
+}
+```
+
+# Merge Datasets
+
+```{r}
+names <- c()
+for(x in dirs){
+  name <- gsub("_filtered_feature_bc_matrix", "", x)
+  names <- append(names, name)
+}
+merged_seurat <- merge(HB17_background, y = c(HB17_PDX, HB17_tumor, HB30_PDX, HB30_tumor, HB53_background, HB53_tumor),
+                       add.cell.ids = names,
+                       project = "HB")
+names
+```
+
+# QC & filtering
+
+```{r}
+head(merged_seurat@meta.data)
+```
+
+
+```{r}
+merged_seurat$sample <- rownames(merged_seurat@meta.data)
+
+merged_seurat@meta.data <- separate(merged_seurat@meta.data, col = "sample", into = c("Patient", "Type", "Barcodes"), sep = "_")
+
+head(merged_seurat@meta.data)
+```
+## Quality Control steps
+
+```{r}
+merged_seurat$mitoPercent <- PercentageFeatureSet(merged_seurat, pattern = "^MT-")
+```
+
+
+## Filtering
+
+```{r}
+merged_seurat_filtered <- subset(merged_seurat,subset = nCount_RNA > 800 & nFeature_RNA > 500 & mitoPercent < 10)
+```
+
+# Perform standard Workflow steps
+
+```{r, message = FALSE, warning = FALSE}
+merged_seurat_filtered = NormalizeData(object = merged_seurat_filtered)
+merged_seurat_filtered <- FindVariableFeatures(object = merged_seurat_filtered)
+merged_seurat_filtered <- ScaleData(object = merged_seurat_filtered)
+merged_seurat_filtered <- RunPCA(object = merged_seurat_filtered)
+```
+
+```{r}
+ElbowPlot(merged_seurat_filtered)
+```
+
+
+
+```{r}
+merged_seurat_filtered <- FindNeighbors(object = merged_seurat_filtered, dims = 1:20)
+merged_seurat_filtered <- FindClusters(object = merged_seurat_filtered)
+merged_seurat_filtered <- RunUMAP(object = merged_seurat_filtered, dims = 1:20)
+```
+
+## Plot
+
+```{r}
+p1 <- DimPlot(merged_seurat_filtered, reduction = "umap", group.by = "Patient")
+p2 <- DimPlot(merged_seurat_filtered, reduction = "umap", group.by = "Type")
+
+grid.arrange(p1, p2, ncol = 2, nrow = 2)
+```
+
+
+# Perform integration to correct batch effects
+
+```{r}
+obj.list <- SplitObject(object = merged_seurat_filtered, split.by = "Patient")
+for(i in 1:length(obj.list)){
+  obj.list[[i]] <- NormalizeData(object = obj.list[[i]])
+  obj.list[[i]] <- FindVariableFeatures(object = obj.list[[i]])
+}
+```
+
+```{r}
+features <- SelectIntegrationFeatures(object.list = obj.list)
+anchors <- FindIntegrationAnchors(object.list = obj.list,
+                                  anchor.features = features)
+```
+
+```{r}
+seurat.integrated <- IntegrateData(anchorset = anchors)
+```
+
+```{r}
+seurat.integrated <- ScaleData(object = seurat.integrated)
+seurat.integrated <- RunPCA(object = seurat.integrated)
+seurat.integrated <- RunUMAP(object = seurat.integrated, dims = 1:50)
+```
+
+```{r}
+p1 <- DimPlot(seurat.integrated, reduction = "umap", group.by = "Patient")
+p2 <- DimPlot(seurat.integrated, reduction = "umap", group.by = "Type")
+
+grid.arrange(p1, p2, ncol = 2, nrow = 2)
+```
+
+
+

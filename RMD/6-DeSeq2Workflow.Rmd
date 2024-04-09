@@ -1,0 +1,119 @@
+---
+title: "DeSeq2 workflow tutorial"
+output: github_document
+---
+
+# Load Libraries
+
+```{r, message = FALSE, warning = FALSE, load-libraries}
+library(DESeq2)
+library(tidyverse)
+library(airway)
+```
+
+# Pre step : Generate data using following code
+
+```{r}
+data(airway)
+sample_info <- as.data.frame(colData(airway))
+sample_info <- sample_info[,c(2,3)]
+sample_info$dex <- gsub('trt', 'treated', sample_info$dex)
+sample_info$dex <- gsub('untrt', 'untreated', sample_info$dex)
+names(sample_info) <- c('cellLine', 'dexamethasone')
+write.table(sample_info, file = "sample_info.csv", sep = ',', col.names = T, row.names = T, quote = F)
+
+countsData <- assay(airway)
+write.table(countsData, file = "counts_data.csv", sep = ',', col.names = T, row.names = T, quote = F)
+```
+
+
+# Step 1 : Prepare the count data.
+
+```{r}
+counts_data <- read.csv('counts_data.csv')
+head(counts_data)
+```
+## : Read in sample info
+
+```{r}
+colData <- read.csv("sample_info.csv")
+head(colData)
+```
+## make sure the row and column name order is the same in both datasets
+
+```{r}
+all(colnames(counts_data) %in% rownames(colData))
+
+all(colnames(counts_data) == rownames(colData))
+
+```
+
+# Step 2 : construct DeSeq2 object
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = counts_data,
+                              colData = colData,
+                              design = ~ dexamethasone)
+dds
+```
+## Perform pre-study
+
+- Pre filtering : removing rows with low gene counts
+
+```{r}
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+```
+
+- Set Factor Levels
+
+```{r}
+dds$dexamethasone <- relevel(dds$dexamethasone, ref = "untreated")
+# if you don't mention reference, it will use alphabetical
+dds$dexamethasone
+```
+
+# Step 3 : Run Deseq
+
+```{r}
+dds <- DESeq(dds)
+```
+
+# Step 4 : Exploring results
+
+
+```{r}
+res <- results(dds)
+res
+```
+BaseMean = average of normalized counts
+
+log2FoldChange = comparing treated based on untreated
+positive value = upregulated
+negative value = downregulated
+
+lfcSE = standard estimate of log2foldchange
+
+stat = Wald test values
+
+pvalue is pvalue
+
+padj = corrected p value for multiple testing
+This is due to p value being randomly distributed
+if you have 100 values 0.05 means 5 of them can be inside the p-value.
+
+```{r}
+summary(res)
+res0.01 <- results(dds, alpha=0.01)
+res0.01
+```
+## Contrast 
+
+there might be multiple reference levels then you can use the function **contrast**
+
+## MA plot
+
+```{r}
+plotMA(res)
+```
+

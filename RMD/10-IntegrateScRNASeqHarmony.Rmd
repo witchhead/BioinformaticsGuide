@@ -1,0 +1,87 @@
+---
+title: "Integrate Single Cell RNA Sequence data with Harmony"
+output: github_document
+---
+
+# How Harmony works
+
+Harmony is a batch correction method. read the paper[link](https://www.nature.com/articles/s41592-019-0619-0)
+
+Harmony doesn't calculate the result of the scaled data.
+
+Harmony only calculates the embeddings and we will learn how to utilize these embeddings.
+
+# Dataset
+
+will use Lupus dataset. 8 Lupus patients with control and stimulated group with interferon beta.
+
+
+# Load libraries
+
+```{r, message = FALSE, warning = FALSE, load-libraries}
+library(tidyverse)
+library(ggplot2)
+library(Seurat)
+library(SeuratData)
+library(harmony)
+```
+
+# Install data
+
+```{r}
+InstallData("ifnb")
+ifnb <- LoadData("ifnb")
+ifnb <- UpdateSeuratObject(ifnb)
+str(ifnb)
+```
+
+# Standard Workflow
+
+## Filter and Quality control
+```{r}
+ifnb$mito.Percent <- PercentageFeatureSet(ifnb, pattern = "^MT-")
+ifnb.filtered <- subset(ifnb, subset = nCount_RNA > 800 & nFeature_RNA > 200 & mito.Percent < 5)
+```
+
+## Workflow
+
+```{r}
+ifnb.filtered <- NormalizeData(ifnb.filtered)
+ifnb.filtered <- FindVariableFeatures(ifnb.filtered)
+ifnb.filtered <- ScaleData(ifnb.filtered)
+ifnb.filtered <- RunPCA(ifnb.filtered)
+ElbowPlot(ifnb.filtered)
+```
+
+```{r}
+ifnb.filtered = RunUMAP(ifnb.filtered, dims = 1:20, reduction = "pca")
+DimPlot(ifnb.filtered, reduction = "umap", group.by = "stim")
+```
+# Run Harmony steps
+
+```{r}
+ifnb.harmony <- ifnb.filtered %>% RunHarmony(group.by.vars = "stim",
+                                             plot.convergence = FALSE)
+ifnb.harmony@reductions
+```
+
+
+```{r}
+ifnb.harmony.embeddings <- Embeddings(ifnb.harmony, "harmony")
+head(ifnb.harmony.embeddings)
+```
+```{r}
+ifnb.harmony <- ifnb.harmony %>% RunUMAP(reduction = "harmony", dims = 1:20) %>%
+  FindNeighbors(reduction = "harmony", dims = 1:20) %>%
+  FindClusters(resolution = 0.5)
+DimPlot(ifnb.harmony, reduction = "umap", group.by = "stim")
+```
+
+```{r}
+p1 <- DimPlot(ifnb.filtered, reduction = "umap", group.by = "stim")
+p2 <- DimPlot(ifnb.harmony, reduction = "umap", group.by = "stim")
+p1 | p2
+```
+# Why is this important?
+
+remove batch correction effect but how does these analysis differentiate batch correction from the actual difference between datasets?

@@ -1,0 +1,75 @@
+---
+title: "R Notebook"
+output: github_document
+---
+
+# Visualize Gene Expressions
+
+## Load Libraries
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+## Import Data
+
+```{r}
+data_long <- read.csv("long_data.csv")
+```
+
+## Barplot
+
+```{r}
+data_long %>%
+  filter(gene == "BRCA1") %>%
+  ggplot(aes(x = reorder(samples, -fpkm), y = fpkm)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle("BRCA1 gene Expression in fpkm")
+```
+
+## Density plot
+
+```{r}
+data_long %>%
+  filter(gene == "BRCA1") %>%
+  ggplot(aes(x = fpkm, color = tissue, fill = tissue)) +
+  geom_density(alpha = 0.5) +
+  ggtitle("BRCA1 gene expression density based on tissue type")
+```
+
+## Boxplot
+
+```{r}
+data_long %>%
+  filter(gene == "BRCA1") %>%
+  ggplot(aes(x = metastasis, y = fpkm)) +
+  geom_boxplot() + 
+  ggtitle("BRCA1 gene expression by metastasis")
+```
+
+## Scatterplot
+
+```{r}
+data_long %>%
+  filter(gene == "BRCA1" | gene == "BRCA2") %>%
+  spread(key = gene, value = fpkm) %>%
+  ggplot(aes(x = BRCA1, y = BRCA2, color = tissue)) +
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  geom_abline(slope = 1) +
+  ggtitle("BRCA1 gene expression by metastasis")
+```
+
+## Heatmaps
+
+```{r}
+genesofinterest <- c("BRCA1", "BRCA2", "TP53", "ALK", "MYCN")
+data_long %>% filter(gene %in% genesofinterest) %>%
+  ggplot(aes(x = samples, y = gene, fill = fpkm)) +
+  geom_tile() + 
+  scale_fill_gradient(low = "white", high = "red") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle("Gene expression heatmap for genes of interest")
+```

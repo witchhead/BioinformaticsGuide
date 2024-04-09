@@ -1,0 +1,101 @@
+---
+title: "R Notebook"
+output: github_document
+---
+
+# RPKM FPKM and TPM
+
+## Replicates
+
+### Technical replicates
+
+-   replicates from the same library with same techniques.
+
+-   reduces random noise
+
+### Biological replicates
+
+-   From biologically distinct samples
+
+-   account for biological variations such as difference in temperature and environment...
+
+Why do we have to normalize the count matrix from RNA data matrix?
+
+It doesn't account for a lot of biases.
+
+Then which bias do you have to take account for
+
+## Biases
+
+### Gene Length
+
+Assume Gene A is longer than Gene B.
+
+Then more matches with happen in Gene A.
+
+### Sequencing Depth
+
+Now we understand why we have to normalize
+
+## Normalization methods
+
+1.  RPKM (**R**eads **p**er **k**ilobase of transcript per **m**illion reads mapped)
+
+    1.  Normalizes the gene length and sequencing depth
+
+    2.  Higher than RPKM of a gene, higher the gene expression
+
+    3.  used to quantify transcripts from **single-ended reads**
+
+    4.  **CAN NOT BE USED FOR DIFFERENTIAL GENE EXPRESSION ANALYSIS(deSeq2 / edgeR)**
+
+        -   They take not normalized raw counts as a input
+
+        -   RPKM doesn't account to some of the biases that happen in these techniques
+
+2.  FPKM (**f**ragments **p**er **k**ilobase of transcript peer **m**illion mapped fragments)
+
+    1.  Analogous to RPKM
+
+    2.  Higher the FPKM, higher the expression
+
+    3.  used for **paired ended data**, a read pair, rather than single reads
+
+    4.  **FPKM ≠ 2 \* RPKM**
+
+    5.  **CAN NOT BE USED FOR DIFFERENTIAL GENE EXPRESSION ANALYSIS(deSeq2 / edgeR)**
+
+3.  TPM (**T**ranscripts **p**er **m**illion fragments)
+
+    1.  Normalizes for gene length and sequencing depth
+
+    2.  TPM is better suited to **compare expression between two samples**
+
+    3.  **CAN NOT BE USED FOR DIFFERENTIAL GENE EXPRESSION ANALYSIS(deSeq2 / edgeR)**
+
+## Practice
+
+6M library size for each replicates
+
+| Genes                | Gene Length | Technical replicates 1 | Technical replicates 2 | Technical replicates 3 |
+|---------------|---------------|---------------|---------------|---------------|
+| gene A               | 1.5 kb      | 50                     | 25                     | 85                     |
+| gene B               | 2 kb        | 75                     | 50                     | 90                     |
+| ...                  | ...         | ...                    | ...                    | ...                    |
+| Total numbers mapped | ...         | 125                    | 75                     | 175                    |
+
+### Calculate RPKM
+
+1.  Normalize for sequencing Depth
+    -   Divide count / total numbers mapped **RPM**
+    -   for gene A = 50 / 125 = 0.4
+    -   However for real data you would have a **really small number** and that is why you multiply **1,000,000**
+2.  Normalize by Gene Length
+    -   normalize for 1kb of gene length **RPK**
+    -   4 : 1.5kb = ?? : 1kb then 2.66 is the RPK value
+
+### TPM
+
+1.  you do the RPKM but in reverse order
+
+TPM is better to compare between technical replicates.

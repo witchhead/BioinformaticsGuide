@@ -1,0 +1,126 @@
+---
+title: "Doublet Finder"
+output: github_document
+---
+
+# Types of Doublets
+- Homotypic Doublets : doublets dervied from transcriptionally similar cells
+
+- Heterotypic Doublets : doublets derived from transcriptionally distinct cells
+
+Doublet finder is more keen to heterotypic doublets
+
+# Parameters of Doublet Finder
+
+doublet finder needs 3 parameters.
+
+performance is highly dependent on pK value.
+
+1. pN : the number of artificial doublets
+
+2. pK : the neighborhood size used to compute the number of artificial nearest neighbors
+
+3. Exp : the number of expected real doublets
+
+# Best practices of using Doublet Finder
+
+- Doublet finder should not be applied to aggregated scRNA-seq data
+
+- Not preferable to run on merged data
+
+- Should be run on distinct samples separately
+
+- Input data should be cleared of low quality cells
+
+- Remove clusters with low RNA UMIs, high mitochondrial reads and uninformative markers
+
+# Load libraries
+
+```{r, message = FALSE, warning = FALSE, load-libraries}
+library(tidyverse)
+library(ggplot2)
+library(Seurat)
+library(DoubletFinder)
+```
+
+# Create Seurat object
+
+```{r}
+cts <- ReadMtx(mtx = ".gitignore/raw_feature_bc_matrix/matrix.mtx.gz",
+               features = ".gitignore/raw_feature_bc_matrix/features.tsv.gz",
+               cells = ".gitignore/raw_feature_bc_matrix/barcodes.tsv.gz")
+
+pbmc.seurat <- CreateSeuratObject(counts = cts)
+```
+
+# QC and filtering
+
+```{r}
+pbmc.seurat$mitopercent = PercentageFeatureSet(pbmc.seurat, pattern = "^MT-")
+pbmc.seurat.filtered = subset(pbmc.seurat, subset = nCount_RNA > 800 & nFeature_RNA > 500 & mitopercent  < 10)
+```
+
+# Standard Workflow
+
+```{r}
+pbmc.seurat.filtered <- NormalizeData(object = pbmc.seurat.filtered)
+pbmc.seurat.filtered <- FindVariableFeatures(object = pbmc.seurat.filtered)
+pbmc.seurat.filtered <- ScaleData(object = pbmc.seurat.filtered)
+pbmc.seurat.filtered <- RunPCA(object = pbmc.seurat.filtered)
+ElbowPlot(pbmc.seurat.filtered)
+```
+
+
+
+```{r, message = FALSE, warning = FALSE}
+pbmc.seurat.filtered <- FindNeighbors(object = pbmc.seurat.filtered, dims = 1:20)
+pbmc.seurat.filtered <- FindClusters(object = pbmc.seurat.filtered)
+pbmc.seurat.filtered <- RunUMAP(object = pbmc.seurat.filtered, dims = 1:20)
+```
+
+# Find parameters
+
+```{r, message = FALSE, warning = FALSE}
+sweep.res.list_nsclc <- paramSweep(pbmc.seurat.filtered, PCs = 1:20, sct = FALSE)
+sweep.stats_nsclc <- summarizeSweep(sweep.res.list_nsclc, GT = FALSE)
+bcmvn_nsclc <- find.pK(sweep.stats_nsclc)
+```
+
+```{r}
+ggplot(bcmvn_nsclc, aes(pK, BCmetric, group = 1)) + 
+  geom_point() + 
+  geom_line()
+```
+
+```{r}
+pK <- bcmvn_nsclc %>% filter(BCmetric == max(BCmetric)) %>%
+  select(pK)
+pK <- as.numeric(as.character(pK[[1]]))
+```
+
+```{r}
+annotations <- pbmc.seurat.filtered@meta.data$seurat_clusters
+homotypic.prop <- modelHomotypic(annotations)
+nExp_poi <- round(0.076 * nrow(pbmc.seurat.filtered@meta.data))
+nExp_poi.adj <- round(nExp_poi * (1 - homotypic.prop))
+```
+
+# Run doublet finder
+
+```{r}
+nsclc.seurat.obj <- doubletFinder(pbmc.seurat.filtered,
+                                     PCs = 1:20,
+                                     pN = 0.25,
+                                     pK = pK,
+                                     nExp = nExp_poi,
+                                     reuse.pANN = FALSE,
+                                     sct = FALSE)
+
+```
+
+
+```{r}
+DimPlot(nsclc.seurat.obj, reduction = 'umap', group.by = "DF.classifications_0.25_0.26_761")
+```
+
+
