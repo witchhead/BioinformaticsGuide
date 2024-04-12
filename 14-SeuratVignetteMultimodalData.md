@@ -118,32 +118,32 @@ cbmc <- RunUMAP(cbmc, dims = 1:30)
     ## To use Python UMAP via reticulate, set umap.method to 'umap-learn' and metric to 'correlation'
     ## This message will be shown once per session
 
-    ## 03:30:37 UMAP embedding parameters a = 0.9922 b = 1.112
+    ## 07:39:29 UMAP embedding parameters a = 0.9922 b = 1.112
 
-    ## 03:30:37 Read 8617 rows and found 30 numeric columns
+    ## 07:39:29 Read 8617 rows and found 30 numeric columns
 
-    ## 03:30:37 Using Annoy for neighbor search, n_neighbors = 30
+    ## 07:39:29 Using Annoy for neighbor search, n_neighbors = 30
 
-    ## 03:30:37 Building Annoy index with metric = cosine, n_trees = 50
+    ## 07:39:29 Building Annoy index with metric = cosine, n_trees = 50
 
     ## 0%   10   20   30   40   50   60   70   80   90   100%
 
     ## [----|----|----|----|----|----|----|----|----|----|
 
     ## **************************************************|
-    ## 03:30:38 Writing NN index file to temp file C:\Users\juhyu\AppData\Local\Temp\Rtmp2pklyB\file5cc83f6372
-    ## 03:30:38 Searching Annoy index using 1 thread, search_k = 3000
-    ## 03:30:40 Annoy recall = 100%
-    ## 03:30:40 Commencing smooth kNN distance calibration using 1 thread with target n_neighbors = 30
-    ## 03:30:41 Initializing from normalized Laplacian + noise (using RSpectra)
-    ## 03:30:42 Commencing optimization for 500 epochs, with 385074 positive edges
-    ## 03:31:05 Optimization finished
+    ## 07:39:30 Writing NN index file to temp file C:\Users\juhyu\AppData\Local\Temp\RtmpcDn2Kg\file3b0c24855cc8
+    ## 07:39:30 Searching Annoy index using 1 thread, search_k = 3000
+    ## 07:39:32 Annoy recall = 100%
+    ## 07:39:32 Commencing smooth kNN distance calibration using 1 thread with target n_neighbors = 30
+    ## 07:39:33 Initializing from normalized Laplacian + noise (using RSpectra)
+    ## 07:39:34 Commencing optimization for 500 epochs, with 385074 positive edges
+    ## 07:39:56 Optimization finished
 
 ``` r
 DimPlot(cbmc, label = TRUE)
 ```
 
-![](14--SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
+![](14-SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
 But none of these take the non default assay into account
 
 # Visualize multiple modalities side by side
@@ -181,7 +181,7 @@ p2 <- FeaturePlot(cbmc, "CD19") + ggtitle("CD19 RNA")
 p1 | p2
 ```
 
-![](14--SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
+![](14-SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
 The umap was generated based on RNA analysis. We were able to visualize
 the ADT protein expression on the same map just after normalizing the
 data.
@@ -206,14 +206,14 @@ p2 <- FeaturePlot(cbmc, "rna_CD19") + ggtitle("CD19 RNA")
 p1 | p2
 ```
 
-![](14--SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
+![](14-SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
 \# Identify markers for scRNA-seq clusters
 
 ``` r
 VlnPlot(cbmc, "adt_CD19")
 ```
 
-![](14--SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+![](14-SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
 you can identify each markers using following ways
 
 ``` r
@@ -262,16 +262,16 @@ Additional Multimodal visualizations
 FeatureScatter(cbmc, feature1 = "adt_CD19", feature2 = "adt_CD3")
 ```
 
-![](14--SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+![](14-SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
 
 ``` r
 FeatureScatter(cbmc, feature1 = "adt_CD3", feature2 = "rna_CD3E")
 ```
 
-![](14--SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+![](14-SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
 
 ``` r
 FeatureScatter(cbmc, feature1 = "adt_CD4", feature2 = "adt_CD8")
 ```
 
-![](14--SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+![](14-SeuratVignetteMultimodalData_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
