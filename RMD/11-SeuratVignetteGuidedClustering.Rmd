@@ -1,0 +1,164 @@
+---
+title: "Seurat Vignette : Guided Clustering"
+output: github_document
+---
+
+# Load libraries
+
+```{r, message = FALSE, warning = FALSE, load-libraries}
+library(tidyverse)
+library(ggplot2)
+library(Seurat)
+library(patchwork)
+```
+
+# Load Dataset
+
+```{r}
+pbmc.data <- Read10X(data.dir = ".gitignore/filtered_gene_bc_matrices/hg19/")
+pbmc <- CreateSeuratObject(counts = pbmc.data, project = "pbmc3k", min.cells = 3, min.features = 200)
+# min.cells : Include features that are detected in at least [min.cells]
+# min.features : Include cells that have at least [min.features]
+```
+# Standard Workflow
+
+## QC and selecting cells
+
+```{r, fig.width = 18, fig.height = 6}
+pbmc$mitoPercent = PercentageFeatureSet(pbmc, pattern = "^MT-")
+VlnPlot(pbmc, features = c("nFeature_RNA", "nCount_RNA", "mitoPercent"), ncol = 3)
+```
+```{r, fig.width = 18, fig.height = 6}
+plot1 <- FeatureScatter(pbmc, feature1 = "nCount_RNA", feature2 = "mitoPercent")
+plot2 <- FeatureScatter(pbmc, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+```{r}
+pbmc <- subset(pbmc, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & mitoPercent < 5)
+# mito percent lower than 5 seems to be the norm
+```
+
+## Normalizing the data
+
+```{r}
+pbmc <- NormalizeData(pbmc, normalization.method = "LogNormalize", scale.factor = 10000)
+# this is the default same as just normalize data
+```
+
+This method has an assumption : each cell originally contains the same amount of RNA molecules.
+
+Method includes CLR (Centered Log Ratio Transformation) and RC (Relative Counts).
+
+If this assumption doesn't hold, use **SCTransform** (you don't have to run normalizedata, findvariablefeatures and scaledata)
+
+## Identify high variable features
+
+```{r, fig.width = 18, fig.height = 6}
+pbmc <- FindVariableFeatures(pbmc, selection.method = "vst", nfeatures = 2000)
+
+top10 <- head(VariableFeatures(pbmc, 10))
+plot1 <- VariableFeaturePlot(pbmc)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot1 + plot2
+```
+There are different seleciton methods: VST, mean.var.plot, dispersion.
+
+## Scale Data
+
+```{r}
+all.genes <- rownames(pbmc)
+pbmc <- ScaleData(pbmc, features = all.genes)
+```
+
+For advanced process you should use SCTransform
+
+## Perform linear dimensional reduction
+
+```{r}
+pbmc <- RunPCA(pbmc, features = VariableFeatures(pbmc))
+print(pbmc$pca, dims = 1:5, nfeatures = 5)
+```
+
+You can visualize pca like this
+
+```{r}
+VizDimLoadings(pbmc, dims = 1:2, reduction = "pca")
+```
+```{r}
+DimPlot(pbmc, reduction = "pca") + NoLegend()
+```
+
+### Understanding dim Heatmap
+
+Cells and Features are ordered according to their PCA scores.
+
+Can Find a source of heterogeneity in the dataset.
+
+```{r}
+DimHeatmap(pbmc, dims = 1, cells = 500, balanced = TRUE)
+```
+# Use Elbow plot
+
+you can decide how many principal components to use in your analysis
+
+```{r}
+ElbowPlot(pbmc)
+```
+## Cluster the Cells
+
+```{r}
+pbmc <- FindNeighbors(pbmc, dims = 1:7)
+pbmc <- FindClusters(pbmc, resolution = 0.5)
+# dims 1 : 7 was decided from using 7 components from the analysis above
+# you can choose resolutions in find clusters
+# resolution of 0.4 - 1.2 is good for 3k cells
+```
+## Run Non-linear dimensional reduction
+
+```{r}
+pbmc <- RunUMAP(pbmc, dims = 1:7)
+DimPlot(pbmc, reduction = "umap")
+```
+
+## Find Differentially Expressed features
+
+You can use FindAllMarkers for all idents. you can also test groups vs groups, group vs all others.
+
+```{r}
+cluster2.markers <- FindMarkers(pbmc, ident.1 = 2)
+head(cluster2.markers, n = 4)
+```
+
+You can find markers for every cluster compared to all other remaining cells and report only the positive ones.
+
+```{r}
+pbmc.markers <- FindAllMarkers(pbmc, only.pos = TRUE)
+```
+```{r}
+cluster0.markers <- FindMarkers(pbmc, ident.1 = 0, logfc.threshold = 0.25, test.use = "roc", only.pos = TRUE)
+```
+
+```{r}
+VlnPlot(pbmc, features = c("MS4A1", "CD79A"))
+```
+
+```{r}
+VlnPlot(pbmc, features = c("NKG7", "PF4"), slot = "counts", log = TRUE)
+```
+
+```{r}
+FeaturePlot(pbmc, features = c("MS4A1", "GNLY", "CD3E", "CD14", "FCER1A", "FCGR3A", "LYZ", "PPBP",
+    "CD8A"))
+```
+
+## Assign Cell names
+
+```{r}
+#new.cluster.ids <- c("Naive CD4 T", "CD14+ Mono", "Memory CD4 T", "B", "CD8 T", "FCGR3A+ Mono",
+#    "NK", "DC", "Platelet")
+#names(new.cluster.ids) <- levels(pbmc)
+#pbmc <- RenameIdents(pbmc, new.cluster.ids)
+#DimPlot(pbmc, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+```
+

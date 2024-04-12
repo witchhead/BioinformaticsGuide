@@ -1,0 +1,148 @@
+---
+title: "Seurat Vignette: Data Visualization methods"
+output: github_document
+fig_width: 12
+fig_height: 9
+---
+
+# Load libraries
+
+```{r, message = FALSE, warning = FALSE, load-libraries}
+library(tidyverse)
+library(ggplot2)
+library(Seurat)
+library(SeuratData)
+```
+
+# Load Data
+
+```{r}
+InstallData("pbmc3k")
+pbmc3k.final <- LoadData("pbmc3k", type = "pbmc3k.final")
+pbmc3k.final <- UpdateSeuratObject(pbmc3k.final)
+pbmc3k.final$groups <- sample(c("group1", "group2"), size = ncol(pbmc3k.final), replace = TRUE)
+features <- c("LYZ", "CCL5", "IL32", "PTPRCAP", "FCGR3A", "PF4")
+pbmc3k.final
+```
+
+### Data understanding
+
+```{r}
+head(pbmc3k.final@meta.data)
+```
+
+# Five Visualizations of marker feature expression
+
+## Ridge Plot
+
+You can see the distribution of expression level of certain features by idents. However, ridgeplots do not have a y-axis so you can't directly compare the values by identity.
+
+```{r, fig.width = 12 , fig.height = 9}
+RidgePlot(pbmc3k.final, features = features, ncol = 2)
+```
+
+## Violin plot
+
+Violin plots allow you to compare the distributions with dots. You can only get a shape of distributions.
+
+```{r, fig.width = 12 , fig.height = 9}
+VlnPlot(pbmc3k.final, features = features)
+```
+
+## Feature Plots
+
+```{r, fig.width = 12 , fig.height = 9}
+FeaturePlot(pbmc3k.final, features = features)
+```
+
+## Dot plot
+
+This plot seems pretty bad compared to other visualization techniques. Eyes are really bad at comparing area or dot size and color palette is also a non-obvious way of visualizing.
+
+```{r, fig.width = 12 , fig.height = 9}
+DotPlot(pbmc3k.final, features = features) + RotatedAxis()
+```
+
+## Heatmap
+
+Have to downwsample but shows some variability within each box.
+
+```{r, fig.width = 12 , fig.height = 9}
+DoHeatmap(subset(pbmc3k.final, downsample = 100), features = features, size = 3)
+```
+
+# New Additions to Feature Plot
+
+```{r}
+p1 <- FeaturePlot(pbmc3k.final, features = "MS4A1")
+p2 <- FeaturePlot(pbmc3k.final, features = "MS4A1", min.cutoff = 1, max.cutoff = 3)
+p3 <- FeaturePlot(pbmc3k.final, features = c("MS4A1", "PTPRCAP"), min.cutoff = "q10", max.cutoff = "q90")
+p4 <- FeaturePlot(pbmc3k.final, features = c("MS4A1", "CD79A"), blend = TRUE)
+p5 <- FeaturePlot(pbmc3k.final, features = c("MS4A1", "CD79A"), split.by = "groups")
+```
+
+You can define cutoff values using quantile and value.
+
+```{r, fig.width = 12 , fig.height = 9}
+p1 | p2
+```
+
+```{r, fig.width = 12 , fig.height = 9}
+p3
+```
+
+```{r, fig.width = 12 , fig.height = 4.5}
+p4
+```
+
+```{r, fig.width = 12 , fig.height = 9}
+p5
+```
+
+# Updated and expanded visualization functions
+
+```{r, fig.width = 12 , fig.height = 9}
+VlnPlot(pbmc3k.final, features = "percent.mt", split.by = "groups")
+```
+
+```{r}
+DotPlot(pbmc3k.final, features = features, split.by = "groups") + RotatedAxis()
+```
+
+```{r}
+DimPlot(pbmc3k.final)
+```
+
+You can remove the umap and plot PC components
+
+```{r}
+pbmc3k.final.no.umap <- pbmc3k.final
+pbmc3k.final.no.umap[["umap"]] <- NULL
+DimPlot(pbmc3k.final.no.umap) + RotatedAxis()
+```
+
+```{r}
+DoHeatmap(pbmc3k.final, features = VariableFeatures(pbmc3k.final)[1:100], cells = 1:500, size = 4,
+    angle = 90) + NoLegend()
+```
+
+# Plotting accessories
+
+you can use label points or label clusters
+
+```{r}
+plot <- DimPlot(pbmc3k.final, reduction = "pca") + NoLegend()
+LabelClusters(plot = plot, id = "ident")
+```
+
+```{r}
+LabelPoints(plot = plot, points = TopCells(object = pbmc3k.final[["pca"]]), repel = TRUE)
+```
+
+```{r}
+plot1 <- DimPlot(pbmc3k.final)
+# Create scatter plot with the Pearson correlation value as the title
+plot2 <- FeatureScatter(pbmc3k.final, feature1 = "LYZ", feature2 = "CCL5")
+# Combine two plots
+plot1 + plot2
+```

@@ -1,0 +1,111 @@
+---
+title: "Seurat Essential Commands"
+output: github_document
+---
+
+# Standard Seurat Workflow
+
+```         
+pbmc <- NormalizeData(object = pbmc)
+pbmc <- FindVariableFeatures(object = pbmc)
+pbmc <- ScaleData(object = pbmc)
+pbmc <- RunPCA(object = pbmc)
+pbmc <- FindNeighbors(object = pbmc, dims = 1:30)
+pbmc <- FindClusters(object = pbmc)
+pbmc <- RunUMAP(object = pbmc, dims = 1:30)
+DimPlot(object = pbmc, reduction = "umap")
+```
+
+# SCTransform Version
+
+```         
+pbmc <- SCTransform(object = pbmc)
+pbmc <- RunPCA(object = pbmc)
+pbmc <- FindNeighbors(object = pbmc, dims = 1:30)
+pbmc <- FindClusters(object = pbmc)
+pbmc <- RunUMAP(object = pbmc, dims = 1:30)
+DimPlot(object = pbmc, reduction = "umap")
+```
+
+# Seurat Object Data Access
+
+## Cell, feature and layer names
+
+```         
+# Get Cells and Feature names
+colnames(pbmc)
+Cells(pbmc)
+
+# Feature Names
+rownames(pbmc)
+Features(pbmc)
+
+# Number of cells / features
+num_cells <- ncol(pbmc)
+num_features <- nrow(pbmc)
+
+# List of object layers
+Layers(pbmc)
+
+# Working with multimodal object list assays
+Assays(pbmc)
+
+# Assay specific features
+Features(pbmc[['RNA']])
+Features(pbmc[['ADT']])
+
+# Variable Feature names
+VariableFeatures(pbmc)
+```
+
+```         
+# Set variable features
+VariableFeatures(pbmc) <- var.gene.names
+# Set for specific assays
+VariableFeatures(pbmc[['RNA']]) <- var.gene.names
+```
+
+## Identity class labels
+
+```         
+# Set identity classes to an existing columns in meta data
+Idents(object = pbmc) <- "seurat_annotations"
+
+# View cell identities, get summary table
+Idents(pbmc)
+table(Idents(pbmc))
+
+# Set Identity to CD4 T Cells for all cells
+Idents(pbmc) <- "CD4 T Cells"
+
+# Set for a selected group of cells
+pbmc.cells <- Cells(pbmc)
+Idents(object = pbmc, cells = pbmc.cells[1:10]) <- "CD4 T Cells"
+
+# Get cell identity classes
+Idents(object = pbmc)
+levels(x = pbmc)
+
+# Stash cell identity classes in metadata
+pbmc[["old.ident"]] <- Idents(object= pbmc)
+pbmc <- StashIdent(object = pbmc, save.name = "old.ident")
+
+# Rename identity classes
+pbmc <- RenameIdents(object = pbmc, `CD4 T cells` = "T Helper Cells")
+```
+
+## Cell metadata
+
+```         
+# View metadata frame
+pbmc[[]]
+pbmc@meta.data
+
+# Retrieve spoecific values from the metadata
+pbmc$nCount_RNA
+pbmc[[c("percent.mito", "nFeature_RNA")]]
+
+#Add metadata
+random_group_labels <- sample(x = c("g1", "g2"), size = ncol(x = pbmc), replace = TRUE)
+pbmc$groups <- random_group_labels
+```
