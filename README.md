@@ -20,3 +20,11 @@ The R Markdown [link](https://github.com/witchhead/BioinformaticsGuide/blob/main
 # Chapter 9. [DNA Microarray and using RMA normalization](https://github.com/witchhead/BioinformaticsGuide/blob/main/9-RMAnormalizationMicroarray.md)
 
 # Chapter 10. [Integrate Single Cell data using Harmony](https://github.com/witchhead/BioinformaticsGuide/blob/main/10-IntegrateScRNASeqHarmony.md)
+
+# Chapter 11. [Seurat Vignette - Guided Clustering](https://github.com/witchhead/BioinformaticsGuide/blob/main/11-SeuratVignetteGuidedClustering.md)
+
+# Chapter 12. [Seurat Vignette - Data visualization](https://github.com/witchhead/BioinformaticsGuide/blob/main/12-SeuratVignetteDataVisualization.md)
+
+# Chapter 13. [Seurat Vignette - SCTransform](https://github.com/witchhead/BioinformaticsGuide/blob/main/13-SeuratVignetteSCTransform.md)
+
+# Chapter 14. [Seurat Vignette - Multimodal analysis](https://github.com/witchhead/BioinformaticsGuide/blob/main/14-SeuratVignetteMultimodalData.md)
