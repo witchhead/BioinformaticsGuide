@@ -1,0 +1,207 @@
+---
+title: "Introduction to scRNA-seq Integration"
+output: github_document
+width: 12
+height: 9
+---
+# Introduction to Single-cell RNA sequence Integration
+
+Integrative analysis can help to match shared cell types and states across datasets.
+
+This leads to boosted statistical power and facilitate accurate comparative analysis across datasets.
+
+There are many powerful methods: Harmony and scVI.
+
+# Goals of Integration
+
+- Identify cell subpopulations that are present in both datasets
+
+- Obtain cell type markers that are conserved in both control and stimulated cells
+
+- Compare the datasets to find cell-type specific responses to stimulation
+
+# Load libraries
+
+```{r, message = FALSE, warning = FALSE, load-libraries}
+library(tidyverse)
+library(ggplot2)
+library(Seurat)
+library(SeuratData)
+library(patchwork)
+```
+
+# Load Dataset
+
+```{r}
+InstallData("ifnb")
+ifnb <- LoadData("ifnb")
+ifnb <- UpdateSeuratObject(ifnb)
+```
+
+Split the datasets based on stimulation
+
+```{r}
+ifnb[['RNA']] <- split(ifnb[['RNA']], f = ifnb$stim)
+```
+This has 4 layers
+
+```{r}
+ifnb[["RNA"]]
+```
+
+
+# Perform Workflow
+
+Workflow before Integration
+
+```{r}
+ifnb <- NormalizeData(ifnb)
+ifnb <- FindVariableFeatures(ifnb)
+ifnb <- ScaleData(ifnb)
+ifnb <- RunPCA(ifnb)
+ElbowPlot(ifnb)
+```
+
+```{r}
+ifnb <- FindNeighbors(ifnb, dims = 1:30, reduction = "pca")
+ifnb <- FindClusters(ifnb, resolution = 2, cluster.name = "BeforeIntegration")
+```
+
+```{r}
+ifnb <- RunUMAP(ifnb, dims = 1:30, reduction = "pca", reduction.name = "umap.unintegrated")
+DimPlot(ifnb, reduction = "umap.unintegrated", group.by = c("stim", "seurat_clusters"))
+```
+
+# Perform Integration
+
+There are some explanations needed for this step
+
+```{r}
+ifnb
+```
+There are four types of integration methods: CCA Integration, Harmony Integration, Joint PCA Integration, and RCPA Integration.
+
+How do they differ exactly?
+
+
+```{r}
+ifnb <- IntegrateLayers(object = ifnb, method = CCAIntegration, orig.reduction = "pca", new.reduction = "integrated.cca",
+    verbose = FALSE)
+
+ifnb[["RNA"]] <- JoinLayers(ifnb[["RNA"]])
+```
+
+```{r}
+ifnb
+```
+
+
+```{r}
+ifnb <- FindNeighbors(ifnb, reduction = "integrated.cca", dims = 1:30)
+ifnb <- FindClusters(ifnb, resolution = 2)
+```
+
+```{r}
+ifnb <- RunUMAP(ifnb, dims = 1:30, reduction = "integrated.cca")
+DimPlot(ifnb, reduction = "umap", group.by = c("stim", "seurat_annotations"))
+```
+
+split by condition side by side
+
+```{r}
+DimPlot(ifnb, reduction = "umap", split.by = "stim")
+```
+
+# Identify Conserved Cell type markers
+
+```{r}
+# Define identity as the seurat cell type annotations
+Idents(ifnb) <- "seurat_annotations"
+nk.markers <- FindConservedMarkers(ifnb, ident.1 = "NK", grouping.var = "stim", verbose = FALSE)
+head(nk.markers)
+```
+
+```{r, fig.width = 12, fig.height = 9}
+Idents(ifnb) <- factor(Idents(ifnb), levels = c("pDC", "Eryth", "Mk", "DC", "CD14 Mono", "CD16 Mono",
+    "B Activated", "B", "CD8 T", "NK", "T activated", "CD4 Naive T", "CD4 Memory T"))
+
+markers.to.plot <- c("CD3D", "CREM", "HSPH1", "SELL", "GIMAP5", "CACYBP", "GNLY", "NKG7", "CCL5",
+    "CD8A", "MS4A1", "CD79A", "MIR155HG", "NME1", "FCGR3A", "VMO1", "CCL2", "S100A9", "HLA-DQA1",
+    "GPR183", "PPBP", "GNG11", "HBA2", "HBB", "TSPAN13", "IL3RA", "IGJ", "PRSS57")
+DotPlot(ifnb, features = markers.to.plot, cols = c("blue", "red"), dot.scale = 8, split.by = "stim") +
+    RotatedAxis()
+```
+
+# Identify differential expressed genes across conditions
+
+```{r, fig.width = 12, fig.height = 9}
+library(ggplot2)
+library(cowplot)
+theme_set(theme_cowplot())
+
+aggregate_ifnb <- AggregateExpression(ifnb, group.by = c("seurat_annotations", "stim"), return.seurat = TRUE)
+genes.to.label = c("ISG15", "LY6E", "IFI6", "ISG20", "MX1", "IFIT2", "IFIT1", "CXCL10", "CCL8")
+
+p1 <- CellScatter(aggregate_ifnb, "CD14 Mono_CTRL", "CD14 Mono_STIM", highlight = genes.to.label)
+p2 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+
+p3 <- CellScatter(aggregate_ifnb, "CD4 Naive T_CTRL", "CD4 Naive T_STIM", highlight = genes.to.label)
+p4 <- LabelPoints(plot = p3, points = genes.to.label, repel = TRUE)
+
+p2 + p4
+```
+
+```{r}
+ifnb$celltype.stim <- paste(ifnb$seurat_annotations, ifnb$stim, sep = "_")
+Idents(ifnb) <- "celltype.stim"
+b.interferon.response <- FindMarkers(ifnb, ident.1 = "B_STIM", ident.2 = "B_CTRL", verbose = FALSE)
+head(b.interferon.response, n = 15)
+```
+
+```{r, fig.width = 12, fig.height = 9}
+FeaturePlot(ifnb, features = c("CD3D", "GNLY", "IFI6"), split.by = "stim", max.cutoff = 3, cols = c("grey",
+    "red"), reduction = "umap")
+```
+
+```{r, fig.width = 12, fig.height = 9}
+plots <- VlnPlot(ifnb, features = c("LYZ", "ISG15", "CXCL10"), split.by = "stim", group.by = "seurat_annotations",
+    pt.size = 0, combine = FALSE)
+wrap_plots(plots = plots, ncol = 1)
+```
+# Perform Integration with SCTransform normalized datasets
+
+how are resolutions decided?
+
+```{r}
+ifnb <- LoadData("ifnb")
+ifnb <- UpdateSeuratObject(ifnb)
+ifnb[["RNA"]] <- split(ifnb[["RNA"]], f = ifnb$stim)
+ifnb <- SCTransform(ifnb)
+ifnb <- RunPCA(ifnb)
+ifnb <- RunUMAP(ifnb, dims = 1:30)
+DimPlot(ifnb, reduction = "umap", group.by = c("stim", "seurat_annotations"))
+```
+
+you use "SCT" here
+
+```{r}
+ifnb <- IntegrateLayers(object = ifnb, method = CCAIntegration, normalization.method = "SCT", verbose = F)
+ifnb <- FindNeighbors(ifnb, reduction = "integrated.dr", dims = 1:30)
+ifnb <- FindClusters(ifnb, resolution = 0.6)
+```
+
+```{r}
+ifnb <- RunUMAP(ifnb, dims = 1:30, reduction = "integrated.dr")
+DimPlot(ifnb, reduction = "umap", group.by = c("stim", "seurat_annotations"))
+```
+
+```{r}
+ifnb <- PrepSCTFindMarkers(ifnb)
+ifnb$celltype.stim <- paste(ifnb$seurat_annotations, ifnb$stim, sep = "_")
+Idents(ifnb) <- "celltype.stim"
+b.interferon.response <- FindMarkers(ifnb, ident.1 = "B_STIM", ident.2 = "B_CTRL", verbose = FALSE)
+```
+
+
+
+
