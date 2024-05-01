@@ -1,0 +1,182 @@
+---
+title: "Seurat Vignette: Integrating scRNA-seq and scATAC-seq"
+output: github_document
+---
+
+Users may perform scRNA-seq and scATAC-seq on the same biological system.
+
+It is hard to consistently annotate both datasets with **same set of cell type labels**
+
+This is particularly challenging because **scATAC-seq is difficult to annotate**
+
+- Since the genomic data collected at single-cell resolution is sparse
+
+- Since interpretable gene markers in scRNA-seq data lack
+
+
+In this analysis we do
+
+- 
+
+# Load libraries
+
+```{r, message = FALSE, warning = FALSE, load-libraries}
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+library(Seurat)
+library(Signac)
+library(SeuratData)
+library(EnsDb.Hsapiens.v86)
+```
+
+# Load datasets and run standard procedure
+
+```{r}
+InstallData("pbmcMultiome")
+
+pbmc.rna <- LoadData("pbmcMultiome", "pbmc.rna")
+pbmc.atac <- LoadData("pbmcMultiome", "pbmc.atac")
+
+pbmc.rna[['RNA']] <- as(pbmc.rna[["RNA"]], Class = "Assay5")
+
+pbmc.rna <- subset(pbmc.rna, seurat_annotations != "filtered")
+pbmc.atac <- subset(pbmc.atac, seurat_annotations != "filtered")
+
+pbmc.rna <- pbmc.rna %>% NormalizeData() %>%
+  FindVariableFeatures() %>%
+  ScaleData() %>%
+  RunPCA() %>%
+  RunUMAP(dims = 1:30)
+```
+
+```{r, warning=FALSE}
+# Add gene annotations to the ATAC information
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86)
+seqlevelsStyle(annotations) <- "UCSC"
+genome(annotations) <- "hg38"
+Annotation(pbmc.atac) <- annotations
+```
+
+Latent Semantic Indexing (LSI) is the base analysis method used for scATAC-seq data.
+
+This can be found in the [link](https://www.science.org/doi/10.1126/science.aab1601)
+
+LSI better captures ATAC-seq where PCA better captures RNA-seq.
+
+```{r}
+# You exclude the first dimensiton as typically correlated with sequencing depth
+pbmc.atac <- pbmc.atac %>% 
+  RunTFIDF() %>%
+  FindTopFeatures(min.cutoff = "q0") %>%
+  RunSVD() %>%
+  RunUMAP(reduction = "lsi", dims = 2:30, reduction.name = "umap.atac", reduction.key = "atacUMAP_")
+  
+```
+
+```{r}
+p1 <- DimPlot(pbmc.rna, group.by = "seurat_annotations", label = TRUE) + NoLegend() + ggtitle("RNA")
+p2 <- DimPlot(pbmc.atac, group.by = "orig.ident", label = FALSE) + NoLegend() + ggtitle("ATAC")
+p1 + p2
+```
+
+# Identifying anchors between two datasets
+
+The idea behind integration is you generate a **rough estimate of transciptional activity** of genes
+
+This is done by quantifying ATAC-seq counts in the 2 kb-upstream region and gene body using `GeneActivity()` from `Signac`
+
+Then the estimate and the real value goes through canonical correlation analysis along with gene expression quantifications.
+
+We do this for **highly variable** genes from scRNA-seq datasets.
+
+```{r}
+gene.estimate <- GeneActivity(pbmc.atac, features = VariableFeatures(pbmc.rna))
+# You get the data and put it in as an assay so you can use CCA
+pbmc.atac[['ACTIVITY']] <- CreateAssay5Object(counts = gene.estimate)
+DefaultAssay(pbmc.atac) <- 'ACTIVITY'
+pbmc.atac <- pbmc.atac %>%
+  NormalizeData() %>%
+  ScaleData(features = rownames(pbmc.atac))
+```
+
+```{r}
+transfer.anchors <- FindTransferAnchors(reference = pbmc.rna, 
+                                        query = pbmc.atac, 
+                                        features = VariableFeatures(object = pbmc.rna),
+                                        reference.assay = "RNA",
+                                        query.assay = "ACTIVITY",
+                                        reduction = "cca")
+```
+
+
+# Annotate scATAC-seq cells via label transfer
+
+```{r}
+# weight.reduction is the dimensional reduction to use for weighting anchors
+# In this case, we chose a custom DimReduc object computed from the RunUMAP up top.
+celltype.predictions <- TransferData(anchorset = transfer.anchors,
+                                     refdata = pbmc.rna$seurat_annotations,
+                                     weight.reduction = pbmc.atac[["lsi"]],
+                                     dims = 2:30)
+pbmc.atac <- AddMetaData(pbmc.atac, metadata = celltype.predictions)
+```
+
+## Why do we use a non-default value for weighting anchors?
+
+We typically project PCA structure from reference onto the query when trasferring between **2 scRNA-seq datasets**
+
+However, when transfering across different modality, **CCA** captures feature correlation structure better.
+
+```{r, fig.width = 12, fig.height = 6}
+pbmc.atac$annotation_correct <- pbmc.atac$predicted.id == pbmc.atac$seurat_annotations
+p1 <- DimPlot(pbmc.atac, group.by = "predicted.id", label = TRUE) + NoLegend() + ggtitle("Predicted annotation")
+p2 <- DimPlot(pbmc.atac, group.by = "seurat_annotations", label = TRUE) + NoLegend() + ggtitle("Ground-truth annotation")
+p1 | p2
+```
+
+```{r, fig.width = 12, fig.height = 6}
+predictions <- table(pbmc.atac$seurat_annotations, pbmc.atac$predicted.id)
+predictions <- predictions/rowSums(predictions)  # normalize for number of cells in each cell type
+predictions <- as.data.frame(predictions)
+p1 <- ggplot(predictions, aes(Var1, Var2, fill = Freq)) + geom_tile() + scale_fill_gradient(name = "Fraction of cells",
+    low = "#ffffc8", high = "#7d0025") + xlab("Cell type annotation (RNA)") + ylab("Predicted cell type label (ATAC)") +
+    theme_cowplot() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+correct <- length(which(pbmc.atac$seurat_annotations == pbmc.atac$predicted.id))
+incorrect <- length(which(pbmc.atac$seurat_annotations != pbmc.atac$predicted.id))
+data <- FetchData(pbmc.atac, vars = c("prediction.score.max", "annotation_correct"))
+p2 <- ggplot(data, aes(prediction.score.max, fill = annotation_correct, colour = annotation_correct)) +
+    geom_density(alpha = 0.5) + theme_cowplot() + scale_fill_discrete(name = "Annotation Correct",
+    labels = c(paste0("FALSE (n = ", incorrect, ")"), paste0("TRUE (n = ", correct, ")"))) + scale_color_discrete(name = "Annotation Correct",
+    labels = c(paste0("FALSE (n = ", incorrect, ")"), paste0("TRUE (n = ", correct, ")"))) + xlab("Prediction Score")
+p1 + p2
+```
+
+# Coembedding scRNA-seq and scATAC-seq data
+
+
+```{r, fig.width = 12, fig.height = 6}
+genes.use <- VariableFeatures(pbmc.rna)
+refdata <- GetAssayData(pbmc.rna, assay = "RNA", slot = "data")[genes.use, ]
+
+# refdata (input) contains a scRNA-seq expression matrix for the scRNA-seq cells.  imputation
+# (output) will contain an imputed scRNA-seq matrix for each of the ATAC cells
+imputation <- TransferData(anchorset = transfer.anchors, refdata = refdata, weight.reduction = pbmc.atac[["lsi"]],
+    dims = 2:30)
+pbmc.atac[["RNA"]] <- imputation
+
+coembed <- merge(x = pbmc.rna, y = pbmc.atac)
+
+# Finally, we run PCA and UMAP on this combined object, to visualize the co-embedding of both
+# datasets
+coembed <- ScaleData(coembed, features = genes.use, do.scale = FALSE)
+coembed <- RunPCA(coembed, features = genes.use, verbose = FALSE)
+coembed <- RunUMAP(coembed, dims = 1:30)
+
+DimPlot(coembed, group.by = c("orig.ident", "seurat_annotations"))
+```
+
+
+
+

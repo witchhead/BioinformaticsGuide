@@ -1,0 +1,248 @@
+---
+title: "DADA2 pipeline"
+output: github_document
+---
+
+```{r}
+library(Rcpp)
+library(stats)
+library(dada2)
+library(ggplot2)
+```
+
+# Dada2 pipeline
+
+## Get Data
+
+```{r}
+git_ignore_path <- "BioinformaticsPractice/.gitignore"
+path <- "BioinformaticsPractice/.gitignore/MiSeq_SOP"
+list.files(path)
+```
+These are 16s rRNA gene from gut samples collected longitudinally from mouse.
+
+Used Amplicon in V4 region
+
+```{r}
+# These are the forward reads of the data
+fnFs <- sort(list.files(path, pattern = "_R1_001.fastq", full.names = TRUE))
+# These are the reverse reads
+fnRs <- sort(list.files(path, pattern = "_R2_001.fastq", full.names = TRUE))
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+```
+
+## Plot Quality profiles
+
+Now you can plot the quality profiles by file names
+
+For amplicon sequencing data, you usually aim for 10k+ reads, so the absolute amount of reads are not that large.
+The Quality score is usually kept above 10 = 10% are not great
+20 is 1% due to logarithmic scoring.
+
+```{r}
+p1 <- plotQualityProfile(fnFs[1:2])
+```
+You can see that the quality drops hard in the last 10 sequences
+We can trim the seqeunce at 240 bp
+You should check all the data before deciding.
+
+```{r}
+p1 + scale_x_continuous(limits = c(200, 250))
+```
+For the reverse datasets, we might have to trim over 100 basepairs at the end
+We can trim the read to 160 bp for reverse reads.
+
+```{r}
+p2 <- plotQualityProfile(fnRs[1:2])
+p2 + scale_x_continuous(limits = c(100, 250))
+p2 + scale_x_continuous(limits = c(150, 200))
+```
+
+## Filter Data
+
+```{r}
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+# the first 4 values are forward, forward filt, rev, rev filt
+# trunc len is the length of each truncation on datasets. if shorter its discarded
+# truncQ is 2. Truncates reads at the first instance of quality score less so it guarantees every bp to be higher quality
+#rm.phiX removes all genes that match the phiX genome
+# maxEE can influence the running speed of codes. with tighter EE, you get less reads. Relaxing maxEE, you get more reads.
+# Max EE is the sum of numbers represented through quality score for instance quality score 10 -> 0.1 is added to maxEE
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(240,160),
+              maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+              compress=TRUE, multithread=FALSE)
+head(out)
+```
+For ITS sequencing it is undesirable to use fix-length truncating due to the large length variation at that locus. Remember to take out trunclen in that case.
+
+Zymo research has developed a tool called figaro which you can use to decide dada2 truncation length.
+
+## Learn errors
+
+```{r, fig.width = 12, fig.height = 12}
+errF <- learnErrors(filtFs, multithread=TRUE)
+errR <- learnErrors(filtRs, multithread=TRUE)
+plotErrors(errF, nominalQ=TRUE)
+```
+The red line is the expected error by the definition of Quality Score.
+The black line is the machine learning convergence of error rates.
+dots are the observed error rates
+
+## dada sample inference algorithms
+
+```{r}
+dadaFs <- dada(filtFs, err = errF, multithread = FALSE)
+dadaRs <- dada(filtRs, err = errR, multithread = FALSE)
+```
+
+```{r}
+dadaFs[[1]]
+```
+## Merge the paired reads
+
+```{r}
+mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose = TRUE)
+head(mergers[[1]])
+```
+## Construct Sequence table
+
+```{r}
+seqtab <- makeSequenceTable(mergers)
+dim(seqtab)
+```
+
+```{r}
+table(nchar(getSequences(seqtab)))
+```
+
+## Remove chimeras
+
+```{r}
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+dim(seqtab.nochim)
+```
+bimeras were around 3.5% of the data.
+
+```{r}
+sum(seqtab.nochim)/sum(seqtab)
+```
+## Track reads through pipeline
+
+```{r}
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nochim")
+rownames(track) <- sample.names
+head(track)
+```
+## Assign Taxonomy
+
+```{r}
+taxa <- assignTaxonomy(seqtab.nochim, paste0(git_ignore_path, "/silva_nr_v132_train_set.fa.gz"), multithread=FALSE)
+
+```
+
+can do exact matching between ASVs and sequence reference strains.
+100% but thats not realistic
+
+```{r}
+taxa.print <- taxa 
+rownames(taxa.print) <- NULL
+head(taxa.print)
+```
+Please check the orientation of your datsets if there are errors in this datasets. tryRC = TRUE
+
+## Evaluate the Accuracy
+
+
+```{r}
+unqs.mock <- seqtab.nochim["Mock_F_filt.fastq.gz",]
+unqs.mock <- sort(unqs.mock[unqs.mock>0], decreasing=TRUE) # Drop ASVs absent in the Mock
+cat("DADA2 inferred", length(unqs.mock), "sample sequences present in the Mock community.\n")
+```
+
+```{r}
+mock.ref <- getSequences(file.path(path, "HMP_MOCK.v35.fasta"))
+match.ref <- sum(sapply(names(unqs.mock), function(x) any(grepl(x, mock.ref))))
+cat("Of those,", sum(match.ref), "were exact matches to the expected reference sequences.\n")
+```
+
+
+
+# Continuing with Phyloseq
+
+```{r}
+library(phyloseq)
+library(Biostrings)
+```
+
+```{r}
+samples.out <- rownames(seqtab.nochim)
+```
+
+```{r}
+subject <- sapply(strsplit(samples.out, "D"), `[`, 1)
+gender <- substr(subject,1,1)
+subject <- substr(subject,2,999)
+txt <- sapply(strsplit(samples.out, "D"), `[`, 2)
+txt <- sapply(strsplit(txt, "_"), `[`, 1)
+day <- as.integer(txt)
+samdf <- data.frame(Subject=subject, Gender=gender, Day=day)
+samdf$When <- "Early"
+samdf$When[samdf$Day>100] <- "Late"
+rownames(samdf) <- samples.out
+```
+
+```{r}
+samdf
+```
+
+```{r}
+ps <- phyloseq(otu_table(seqtab.nochim, taxa_are_rows=FALSE), 
+               sample_data(samdf), 
+               tax_table(taxa))
+ps <- prune_samples(!grepl("ock", sample_names(ps)), ps) # Remove mock sample
+sample_names(ps)
+```
+
+```{r}
+dna <- Biostrings::DNAStringSet(taxa_names(ps))
+names(dna) <- taxa_names(ps)
+ps <- merge_phyloseq(ps, dna)
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+ps
+```
+
+```{r}
+plot_richness(ps, x="Day", measures=c("Shannon", "Simpson"), color="When")
+```
+
+
+
+```{r}
+ps.prop <- transform_sample_counts(ps, function(otu) otu/sum(otu))
+# Transformed otu sample counts into proportions
+ord.nmds.bray <- ordinate(ps.prop, method="NMDS", distance="bray")
+sample_data(ps.prop)$filename = factor(rownames(sample_data(ps.prop)))
+```
+
+```{r}
+plot_ordination(ps.prop, ord.nmds.bray, color="When", title="Bray NMDS") +
+  geom_text(
+    label=rownames(sample_data(ps.prop)), 
+    nudge_x = 0.25, nudge_y = 0.25, 
+    check_overlap = T
+  )
+```
+
+```{r}
+# filter the top 20 most existing taxa
+top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:20]
+ps.top20 <- transform_sample_counts(ps, function(OTU) OTU/sum(OTU))
+ps.top20 <- prune_taxa(top20, ps.top20)
+plot_bar(ps.top20, x="Day", fill="Family") + facet_wrap(~When, scales="free_x")
+```
+
+
+

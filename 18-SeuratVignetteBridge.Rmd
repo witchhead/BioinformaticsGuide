@@ -1,0 +1,188 @@
+---
+title: "Seurat Vignette Bridge Integration"
+output: github_document
+---
+
+The ability to map new datasets to established references is important in single cell sequencing.
+
+A key challenge is to bridge integration allowing the mapping of other complimentary technologies onto scRNA-seq reference.
+
+In this vignette
+
+- load and preprocess scATAC-seq, multiome, and scRNA-seq reference data
+
+- Map scATAC-seq via bridge integration
+
+- Explore and assess the resulting annotations
+
+# Load libraries
+
+```{r, message = FALSE, warning = FALSE, load-libraries}
+library(tidyverse)
+library(ggplot2)
+library(Seurat)
+library(SeuratDisk)
+library(Signac)
+library(irlba)
+library(RSpectra)
+library(EnsDb.Hsapiens.v86)
+```
+
+# Load datasets
+
+```{r}
+inputdata.10x <- Read10X_h5(".gitignore/pbmc_granulocyte_sorted_3k_filtered_feature_bc_matrix.h5")
+rna_counts <- inputdata.10x$`Gene Expression`
+atac_counts <- inputdata.10x$Peaks
+```
+
+```{r, warning = FALSE}
+obj.multi <- CreateSeuratObject(counts = rna_counts)
+obj.multi[['percent.mt']] <- PercentageFeatureSet(obj.multi, pattern = "^MT-")
+
+# Filter the standard chromosomes
+grange.counts <- StringToGRanges(rownames(atac_counts), sep = c(":", "-"))
+grange.use <-seqnames(grange.counts) %in% standardChromosomes(grange.counts)
+atac_counts <- atac_counts[as.vector(grange.use), ]
+# Get gene annotations
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86)
+head(annotations)
+```
+
+```{r}
+# Change style to UCSC
+seqlevelsStyle(annotations) <- 'UCSC'
+genome(annotations) <- "hg38"
+# File with ATAC per fragment information file
+frag.file <- ".gitignore/pbmc_granulocyte_sorted_3k_atac_fragments.tsv.gz"
+# Add in ATAC-seq data as ChromatinAssay object
+chrom_assay <- CreateChromatinAssay(
+  counts = atac_counts,
+  sep = c(":", "-"),
+  genome = 'hg38',
+  fragments = frag.file,
+  min.cells = 10,
+  annotation = annotations
+)
+# Add the ATAC assay to the multiome object
+obj.multi[["ATAC"]] <- chrom_assay
+# Filter ATAC data based on QC metrics
+obj.multi <- subset(
+  x = obj.multi,
+  subset = nCount_ATAC < 7e4 &
+    nCount_ATAC > 5e3 &
+    nCount_RNA < 25000 &
+    nCount_RNA > 1000 &
+    percent.mt < 20
+)
+```
+This vignette it is impossible to avoid large 3GB files to run.
+
+Maybe the vignette could have utilized a lighter data file.
+
+```{r, warning = FALSE}
+# Load ATAC dataset
+atac_pbmc_data <- Read10X_h5(filename = ".gitignore/10k_PBMC_ATAC_nextgem_Chromium_X_filtered_peak_bc_matrix.h5") 
+fragpath <- ".gitignore/10k_PBMC_ATAC_nextgem_Chromium_X_fragments.tsv.gz"
+# Get gene annotations
+annotation <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86)
+# Change to UCSC style 
+seqlevelsStyle(annotation) <- 'UCSC'
+# Create ChromatinAssay for ATAC data
+atac_pbmc_assay <- CreateChromatinAssay(
+  counts = atac_pbmc_data,
+  sep = c(":", "-"),
+  fragments = fragpath,
+  annotation = annotation
+  
+)
+# Requantify query ATAC to have same features as multiome ATAC dataset
+requant_multiome_ATAC <- FeatureMatrix(
+  fragments = Fragments(atac_pbmc_assay),
+  features = granges(obj.multi[['ATAC']]),
+  cells = Cells(atac_pbmc_assay)
+)
+```
+
+
+```{r}
+# Create assay with requantified ATAC data
+ATAC_assay <- CreateChromatinAssay(
+  counts = requant_multiome_ATAC,
+  fragments = fragpath,
+  annotation = annotation
+)
+# Create Seurat sbject
+obj.atac  <- CreateSeuratObject(counts = ATAC_assay,assay = 'ATAC')
+obj.atac[['peak.orig']] <- atac_pbmc_assay
+obj.atac <- subset(obj.atac, subset = nCount_ATAC < 7e4 & nCount_ATAC > 2000)
+
+```
+
+
+
+```{r}
+obj.rna <- LoadH5Seurat(".gitignore/pbmc_multimodal.h5seurat")
+```
+
+# Preprocessing / normalization for all datasets
+
+normalize rna with sctransform
+
+normalize atac with tf idf
+
+```{r}
+DefaultAssay(obj.multi) <- "RNA"
+obj.multi <- SCTransform(obj.multi, verbose = FALSE)
+# Normalize the multiome dataset
+DefaultAssay(obj.multi) <- "ATAC"
+obj.multi <- RunTFIDF(obj.multi)
+obj.multi <- FindTopFeatures(obj.multi, min.cutoff = "q0")
+# Normalize the atac query dataset
+obj.atac <- RunTFIDF(obj.atac)
+```
+
+# Map scATAC-seq datasets using bridge integration
+
+```{r}
+dims.atac <- 2:50
+dims.rna <- 1:50
+
+DefaultAssay(obj.multi) <- "RNA"
+DefaultAssay(obj.rna) <- "SCT"
+obj.rna.ext <- PrepareBridgeReference(
+  reference = obj.rna,
+  bridge = obj.multi,
+  reference.reduction = "spca",
+  reference.dims = dims.rna,
+  normalization.method = "SCT")
+
+```
+
+```{r}
+bridge.anchor <- FindBridgeTransferAnchors(
+  extended.reference = obj.rna.ext, query = obj.atac,
+  reduction = "lsiproject", dims = dims.atac)
+```
+
+
+```{r}
+obj.atac <- MapQuery(
+  anchorset = bridge.anchor, reference = obj.rna.ext,
+  query = obj.atac,
+  refdata = list(
+    l1 = "celltype.l1",
+    l2 = "celltype.l2",
+    l3 = "celltype.l3"),
+  reduction.model = "wnn.umap")
+```
+
+
+```{r}
+DimPlot(
+  obj.atac, group.by = "predicted.l2",
+  reduction = "ref.umap", label = TRUE
+) + ggtitle("ATAC") + NoLegend()
+```
+
+

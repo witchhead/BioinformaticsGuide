@@ -1,0 +1,368 @@
+---
+title: "Phyloseq analysis"
+output: github_document
+---
+
+```{r}
+library(phyloseq)
+library(tidyverse)
+library(ggplot2)
+library(plyr)
+```
+
+
+# Load data and phyloseq-ize data - Tutorial 1
+
+```{r}
+data(GlobalPatterns)
+```
+
+```{r}
+otumat = matrix(sample(1:100, 100, replace = TRUE), nrow = 10, ncol = 10)
+rownames(otumat) <- paste0("OTU", 1:nrow(otumat))
+colnames(otumat) <- paste0("Sample", 1:ncol(otumat))
+taxmat = matrix(sample(letters, 70, replace = TRUE), nrow = nrow(otumat), ncol = 7)
+rownames(taxmat) <- rownames(otumat)
+colnames(taxmat) <- c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+```
+
+```{r}
+otumat
+```
+
+```{r}
+taxmat
+```
+
+```{r}
+OTU = otu_table(otumat, taxa_are_rows = TRUE)
+TAX = tax_table(taxmat)
+physeq = phyloseq(OTU, TAX)
+physeq
+```
+```{r}
+library("ape")
+random_tree = rtree(ntaxa(physeq), rooted=TRUE, tip.label=taxa_names(physeq))
+plot(random_tree)
+```
+```{r}
+sampledata = sample_data(data.frame(
+  Location = sample(LETTERS[1:4], size=nsamples(physeq), replace=TRUE),
+  Depth = sample(50:1000, size=nsamples(physeq), replace=TRUE),
+  row.names=sample_names(physeq),
+  stringsAsFactors=FALSE
+))
+sampledata
+```
+
+```{r}
+physeq1 = merge_phyloseq(physeq, sampledata, random_tree)
+physeq1
+```
+```{r}
+plot_tree(physeq1, color="Location", label.tips="taxa_names", ladderize="left", plot.margin=0.3)
+```
+```{r}
+example(GlobalPatterns)
+```
+# Working with sample data
+
+```{r}
+data(GlobalPatterns)
+GP = GlobalPatterns
+# Remove taxa with 0 data
+GP = prune_taxa(taxa_sums(GP) > 0, GP)
+GP
+```
+```{r}
+#sample_data(GP) %>% mutate(human = SampleType %in% c("Feces", "Mock", "Skin", "Tongue"))
+# doesn't work because sample_data is a sample_data object
+sample_data(GP)$human <- get_variable(GP, "SampleType") %in% c("Feces", "Mock", "Skin", "Tongue")
+```
+
+```{r}
+sample_data(GP)
+```
+```{r}
+head(otu_table(GP))
+```
+
+merge_samples explanation:
+A phyloseq object that has had its sample indices merged according to the factor indicated by the group argument
+
+but I still don't understand any value but SampleType and human given this tool.
+
+```{r}
+mergedGP = merge_samples(GP, "SampleType")
+SD = merge_samples(sample_data(GP), "SampleType")
+print(mergedGP)
+SD_org <- sample_data(GP)
+SD
+```
+prune_taxa get rids of all the OTUs from phylogenetic object
+it only influences the otu_table
+
+Here you are filtering both datasets by the 10 most frequent taxa
+and ocean_samples are the sample names of sample Type ocean and the 10 most frequent taxa
+```{r}
+OTUnames10 = names(sort(taxa_sums(GP), TRUE)[1:10])
+GP10  = prune_taxa(OTUnames10,  GP)
+mGP10 = prune_taxa(OTUnames10, mergedGP)
+ocean_samples = sample_names(subset(sample_data(GP), SampleType=="Ocean"))
+print(ocean_samples)
+otu_table(GP10)
+```
+```{r}
+print(rowSums(otu_table(GP10)[,ocean_samples]))
+print(head(otu_table(mGP10)["Ocean",]))
+
+```
+```{r}
+plot_richness(GP, "human", "SampleType", title="unmerged")
+```
+```{r}
+sample_data(mergedGP)$SampleType = sample_names(mergedGP)
+sample_data(mergedGP)$human = sample_names(mergedGP) %in% c("Feces", "Mock", "Skin", "Tongue")
+plot_richness(mergedGP, "human", "SampleType", title="merged")
+```
+The absolute diversity of merged samples increase by a lot since it is due to combining non replicate samples
+
+## Be careful when using merge_phyloseq
+
+```{r}
+data(GlobalPatterns)
+tree = phy_tree(GlobalPatterns)
+tax  = tax_table(GlobalPatterns)
+otu  = otu_table(GlobalPatterns)
+sam  = sample_data(GlobalPatterns)
+otutax = phyloseq(otu, tax)
+otutax
+```
+
+```{r}
+GP2 = merge_phyloseq(otutax, sam, tree)
+identical(GP2, GlobalPatterns)
+```
+
+```{r}
+otusamtree = phyloseq(otu, sam, tree)
+GP3 = merge_phyloseq(otusamtree, otutax)
+identical(GP3, GlobalPatterns)
+
+print(head(otu_table(GP3)))
+# OTU table is summed
+# remember never have two of the same components when summing
+print(head(otu_table(GlobalPatterns)))
+```
+
+# Preprocess
+
+## Access Data
+```{r}
+data("GlobalPatterns")
+
+ntaxa(GlobalPatterns)
+nsamples(GlobalPatterns)
+taxa_names(GlobalPatterns)[1:5]
+sample_names(GlobalPatterns)[1:5]
+rank_names(GlobalPatterns)
+sample_variables(GlobalPatterns)
+```
+```{r}
+otu_table(GlobalPatterns)[1:5, 1:5]
+tax_table(GlobalPatterns)[1:5, 1:5]
+phy_tree(GlobalPatterns)
+```
+The following can be used to visualize the top 10 taxa with the highest counts
+
+```{r}
+myTaxa = names(sort(taxa_sums(GlobalPatterns), decreasing = TRUE)[1:10])
+ex1 = prune_taxa(myTaxa, GlobalPatterns)
+plot(phy_tree(ex1), show.node.label = TRUE)
+```
+## Preprocessing pipeline
+
+Filtering in phyloseq : 
+
+directly remove indices : prune_taxa, prune_samples
+
+build arbitrarily complex sample-wise filtering criteria : filterfun_sample, genefilter_sample
+
+filter_taxa
+
+```{r}
+# Transform sample data into proportions
+GPr = transform_sample_counts(GlobalPatterns, function(x) x / sum(x))
+# Filter such that taxa larger than 0.01% only survive
+GPfr = filter_taxa(GPr, function(x) mean(x) > 1e-5, TRUE)
+```
+
+```{r}
+random_rank <- sample(rank_names(GlobalPatterns), 1)
+random_name <- sample(as.vector(tax_table(GPr)[, random_rank][!is.na(tax_table(GPr)[, random_rank])]), 1)
+Gp.random = subset_taxa(GlobalPatterns, get(random_rank) == random_name)
+
+Gp.chl = subset_taxa(GlobalPatterns, Phylum == "Chlamydiae")
+Gp.chl = prune_samples(sample_sums(Gp.chl) >= 20, Gp.chl)
+```
+
+
+```{r}
+taxa_names(Gp.chl)[1:10]
+Gp.chl.merged = merge_taxa(Gp.chl, taxa_names(Gp.chl)[1:5])
+```
+has agglomeration functions : tip_glom, tax_glom
+
+tip_glom : combines tips of trees separated less than a certain distance
+
+tax_glom : combines on a certain taxonomic rank
+
+```{r, fig.height = 12, fig.width  = 16}
+rank_names(GlobalPatterns)
+gpsfbg <- tax_glom(GlobalPatterns, "Class")
+plot_tree(gpsfbg, color = "SampleType", shape = "Class", size = "Abundance") +
+  guides(shape = "none")
+```
+
+```{r}
+print(head(otu_table(Gp.chl)))
+Gp.chl <- transform_sample_counts(Gp.chl, function(OTU) OTU/sum(OTU) )
+print(head(otu_table(Gp.chl)))
+```
+
+```{r}
+GP = filter_taxa(GlobalPatterns, function(x) sum(x > 3) > (0.2*length(x)), TRUE)
+sample_data(GP)$human = factor(get_variable(GP, "SampleType") %in% c("Feces", "Mock", "Skin", "Tongue") )
+
+total = median(sample_sums(GP))
+standf = function(x, t=total) round(t * (x / sum(x)))
+gps = transform_sample_counts(GP, standf)
+
+gpsf = filter_taxa(gps, function(x) sd(x)/mean(x) > 3.0, TRUE)
+
+gpsfb = subset_taxa(gpsf, Phylum=="Bacteroidetes")
+```
+
+```{r}
+plot_bar(gpsfb, "SampleType", "Abundance", title="Abundance by SampleType")
+```
+
+
+```{r}
+plot_bar(gpsfb, "SampleType", "Abundance", "Family", title = "Distribution of Family by SampleType")
+
+```
+
+
+```{r, fig.height = 12, fig.width = 6}
+plot_bar(gpsfb, "Family", "Abundance", "Family",facet_grid="SampleType~.")
+```
+# Distance
+
+```{r}
+data(enterotype)
+enterotype <- subset_taxa(enterotype, Genus != "-1")
+```
+
+```{r}
+dist_methods <- unlist(distanceMethodList)
+print(dist_methods)
+```
+Unifrac, Weighted Unifrac and DPCoA requires tree 
+
+```{r}
+dist_methods <- dist_methods[-(1:3)]
+dist_methods = dist_methods[-which(dist_methods=="ANY")]
+
+plist <- vector("list", length(dist_methods))
+names(plist) = dist_methods
+for( i in dist_methods ){
+    iDist <- distance(enterotype, method=i)
+    iMDS  <- ordinate(enterotype, "MDS", distance=iDist)
+    p <- NULL
+    p <- plot_ordination(enterotype, iMDS, color="SeqTech", shape="Enterotype")
+    # Add title to each plot
+    p <- p + ggtitle(paste("MDS using distance method ", i, sep=""))
+    # Save the graphic to file.
+    plist[[i]] = p
+}
+```
+
+
+```{r}
+df = ldply(plist, function(x) x$data)
+names(df)[1] <- "distance"
+p = ggplot(df, aes(Axis.1, Axis.2, color=SeqTech, shape=Enterotype))
+p = p + geom_point(size=3, alpha=0.5)
+p = p + facet_wrap(~distance, scales="free")
+p = p + ggtitle("MDS on various distance metrics for Enterotype dataset")
+p
+```
+
+
+# Gap Statistics
+
+```{r}
+library(cluster)
+```
+
+```{r}
+data(enterotype)
+# project the data into a lower dimension
+exord = ordinate(enterotype, method = "MDS", distance = "jsd")
+```
+
+## Compute Gap Statistics
+
+```{r}
+# Pam is a k cluster around mediods
+# Write a wrapper function to be used
+pam1 = function(x, k){list(cluster = pam(x, k, cluster.only = TRUE))}
+#?scores
+# acess either species or site scores for specified axes in some ordination method
+x = phyloseq:::scores.pcoa(exord, display = "sites")
+# ClusGap calculates the goodness of clustering = Gap statistics
+gskmn = clusGap(x[, 1:2], FUN=pam1, K.max = 6, B = 50)
+#K.max : maximum number of clusters to be considered
+#B : Bootstrap samples (monte carlo samples)
+```
+
+
+```{r}
+# Can use wrapper functions like this
+gap_statistic_ordination = function(ord, FUNcluster, type="sites", K.max=6, axes=c(1:2), B=500, verbose=interactive(), ...){
+    require("cluster")
+    if(FUNcluster == "pam1"){
+        FUNcluster = function(x,k) list(cluster = pam(x, k, cluster.only=TRUE))     
+    }
+    x = phyloseq:::scores.pcoa(ord, display=type)
+    if(is.null(axes)){axes = 1:ncol(x)}
+    return(clusGap(x[, axes], FUN=FUNcluster, K.max=K.max, B=B, verbose=verbose, ...))
+}
+```
+
+## Plot Results
+
+```{r}
+plot_clusgap = function(clusgap, title="Gap Statistic calculation results"){
+    require("ggplot2")
+    gstab = data.frame(clusgap$Tab, k=1:nrow(clusgap$Tab))
+    p = ggplot(gstab, aes(k, gap)) + geom_line() + geom_point(size=5)
+    p = p + geom_errorbar(aes(ymax=gap+SE.sim, ymin=gap-SE.sim))
+    p = p + ggtitle(title)
+    return(p)
+}
+```
+
+```{r}
+gs = gap_statistic_ordination(exord, "pam1", B=50, verbose=FALSE)
+print(gs, method="Tibs2001SEmax")
+plot_clusgap(gs)
+
+```
+
+```{r}
+plot(gs, main = "Gap statistic for the 'Enterotypes' data")
+mtext("Looks like 4 clusters is best, with 3 and 5 close runners up.")  
+```
+

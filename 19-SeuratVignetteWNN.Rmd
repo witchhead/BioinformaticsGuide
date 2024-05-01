@@ -1,0 +1,107 @@
+---
+title: "Seurat Vignette: Weighted Nearest Neighbor Analysis"
+output: github_document
+---
+
+The simultaneous measurement of multiple modalities is multimodal analysis
+
+New computational methods are needed to define such cellular states based on multiple data types.
+
+The varying information content of each modality, even across cells represetns a challenge for analysis and integration of multimodal datasets.
+
+"Weighted Nearest Neighbor" is an unsupervised framework to learn the relative utility of each data type in each cell.
+
+Three steps are needed:
+
+1. Independent preprocessing and dimensional reduction of **each modality individually**
+
+2. Learning cell-specific modality **weight** and constructing a WNN graph that integrates the modalities
+
+3. Downstream analysis (visualization, clustering) of the WNN graph
+
+# Load libraries
+
+```{r, message = FALSE, warning = FALSE, load-libraries}
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+library(Seurat)
+library(SeuratData)
+```
+
+# Load Dataset
+
+```{r}
+InstallData("bmcite")
+bm <- LoadData(ds = "bmcite")
+```
+
+
+```{r}
+# Standard Seurat Workflow for RNA
+DefaultAssay(bm) <- 'RNA'
+bm <- NormalizeData(bm) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA()
+
+#
+DefaultAssay(bm) <- 'ADT'
+# use all ADT features for dimensional reduction
+VariableFeatures(bm) <- rownames(bm[["ADT"]])
+bm <- NormalizeData(bm, normalization.method = 'CLR', margin = 2) %>% 
+  ScaleData() %>% RunPCA(reduction.name = 'apca')
+# Set a different name for the reduction such that you don't overwrite the existing RNA pca results
+```
+
+PCA is PCA, ADT PCA is APCA
+
+```{r}
+# The weights will be in [['weighted.nn']]
+# WNN graph can be accessed at [['wknn']]
+# SNN graph can be found at [['wsnn']]
+# cell specific weights are in bm$RNA.weight
+bm <- FindMultiModalNeighbors(
+  bm, reduction.list = list("pca", "apca"), 
+  dims.list = list(1:30, 1:18), modality.weight.name = "RNA.weight"
+)
+```
+
+nn.name is used for knn output which you want to run the UMAP
+
+```{r}
+bm <- RunUMAP(bm, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_")
+bm <- FindClusters(bm, graph.name = "wsnn", algorithm = 3, resolution = 2, verbose = FALSE)
+```
+
+```{r}
+p1 <- DimPlot(bm, reduction = 'wnn.umap', label = TRUE, repel = TRUE, label.size = 2.5) + NoLegend()
+p2 <- DimPlot(bm, reduction = 'wnn.umap', group.by = 'celltype.l2', label = TRUE, repel = TRUE, label.size = 2.5) + NoLegend()
+p1 + p2
+```
+
+```{r}
+bm <- RunUMAP(bm, reduction = 'pca', dims = 1:30, assay = 'RNA', 
+              reduction.name = 'rna.umap', reduction.key = 'rnaUMAP_')
+bm <- RunUMAP(bm, reduction = 'apca', dims = 1:18, assay = 'ADT', 
+              reduction.name = 'adt.umap', reduction.key = 'adtUMAP_')
+```
+
+```{r}
+p3 <- DimPlot(bm, reduction = 'rna.umap', group.by = 'celltype.l2', label = TRUE, 
+              repel = TRUE, label.size = 2.5) + NoLegend()
+p4 <- DimPlot(bm, reduction = 'adt.umap', group.by = 'celltype.l2', label = TRUE, 
+              repel = TRUE, label.size = 2.5) + NoLegend()
+p3 + p4
+```
+
+```{r}
+p5 <- FeaturePlot(bm, features = c("adt_CD45RA","adt_CD16","adt_CD161"),
+                  reduction = 'wnn.umap', max.cutoff = 2, 
+                  cols = c("lightgrey","darkgreen"), ncol = 3)
+p6 <- FeaturePlot(bm, features = c("rna_TRDC","rna_MPO","rna_AVP"), 
+                  reduction = 'wnn.umap', max.cutoff = 3, ncol = 3)
+p5 / p6
+```
+
+
+
+
+
