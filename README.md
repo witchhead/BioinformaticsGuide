@@ -1,5 +1,7 @@
 # BioinformaticsGuide
 
+Hello this is my own practice studying NGS data analysis techniques using R and python.
+
 # Chapter 1. [Download and Process Single Cell RNA Datasets](https://github.com/witchhead/BioinformaticsGuide/blob/main/1-DownloadProcessDatasets.md)
 
 # Chapter 2. [Visualize Gene Expressions with R](https://github.com/witchhead/BioinformaticsGuide/blob/main/2-VisualizeGeneExpression.md)
@@ -28,3 +30,17 @@ The R Markdown [link](https://github.com/witchhead/BioinformaticsGuide/blob/main
 # Chapter 13. [Seurat Vignette - SCTransform](https://github.com/witchhead/BioinformaticsGuide/blob/main/13-SeuratVignetteSCTransform.md)
 
 # Chapter 14. [Seurat Vignette - Multimodal analysis](https://github.com/witchhead/BioinformaticsGuide/blob/main/14-SeuratVignetteMultimodalData.md)
+
+# Chapter 16. [Seurat Vignette - scRNA-seq Integration](https://github.com/witchhead/BioinformaticsGuide/blob/main/16-SeuratVignetteIntegration.md)
+
+# Chapter 17. [Seurat Vignette - Mapping and Annotating query datasets](https://github.com/witchhead/BioinformaticsGuide/blob/main/17-SeuratVignetteMapping.md)
+
+# Chapter 18. [Seurat Vignette - Bridge integration](https://github.com/witchhead/BioinformaticsGuide/blob/main/18-SeuratVignetteBridge.md)
+
+# Chapter 19. [Seurat Vignette - Weighted Nearest Neighbors](https://github.com/witchhead/BioinformaticsGuide/blob/main/19-SeuratVignetteWNN.md)
+
+# Chapter 20. [Seurat Vignette - Integrating scRNAseq and scATACseq](https://github.com/witchhead/BioinformaticsGuide/blob/main/20-SeuratVignetteSCRNAATAC.md)
+
+# Chapter 21. [Phyloseq - conducting microbiome studies](https://github.com/witchhead/BioinformaticsGuide/blob/main/20-SeuratVignetteSCRNAATAC.md)
+
+# Chapter 22. [Dada2 pipeline](https://github.com/witchhead/BioinformaticsGuide/blob/main/22-Dada2pipeline.md)
